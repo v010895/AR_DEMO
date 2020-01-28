@@ -1,0 +1,10 @@
+*.iml
+.gradle
+local.properties
+.idea
+.vscode
+/build
+/captures
+.externalNativeBuild
+/app/src/main/jni
+.project
