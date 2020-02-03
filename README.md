@@ -7,7 +7,7 @@ This project is a demo of slam tracking with argumented reality.
 1. Put calibration/camera.txt under your mobile device /sdcard/calibration/.
 2. Open AR_DEMO app and then press start button.
 3. If initial success, you can use button to control cube translation of rotation.
-Note: Each camera fx fy cx cy is different, so this calibration file might not have good tracking result in different smart phone.
+4. Note: Every camera fx fy cx cy is different, so this calibration file might not have good tracking result in different smart phone.
 
 # Demo video
 
