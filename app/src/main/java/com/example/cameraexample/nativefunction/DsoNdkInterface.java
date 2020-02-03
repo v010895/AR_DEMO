@@ -12,6 +12,6 @@ public class DsoNdkInterface {
     public static native void YUV420ToARGB(byte[] y, byte[] u, byte[] v, int[] output,
                                         int width, int height, int yRowStride, int uvRowStride,
                                         int uvPixelStride, boolean halfSize);
-
+    public static native void stopSLAM();
 
 }

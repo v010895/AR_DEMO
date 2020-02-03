@@ -122,7 +122,7 @@ public class MainActivity extends AppCompatActivity {
   private float[] mTmpAccEvent = new float[3];
   private int logcounter = 0;
   private float[] currentAcc = new float[3];
-
+  private boolean slamStart = false;
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -160,55 +160,7 @@ public class MainActivity extends AppCompatActivity {
         return;
       }
     }
-    mStart.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        myHandler.sendEmptyMessage(INIT_FINISHED);
-        drawHandler.sendEmptyMessage(INIT_FINISHED);
-      }
-    });
-    moveLeft.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        DsoNdkInterface.move(1);
-      }
-    });
-    moveRight.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        DsoNdkInterface.move(2);
-      }
-    });
-    moveUp.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        DsoNdkInterface.move(3);
-      }
-    });
-    moveDown.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        DsoNdkInterface.move(4);
-      }
-    });
-    moveForward.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        DsoNdkInterface.move(5);
-      }
-    });
-    moveBack.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        DsoNdkInterface.move(6);
-      }
-    });
-    rotate.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        DsoNdkInterface.move(7);
-      }
-    });
+    setListener();
     new Thread(new Runnable() {
       @Override
       public void run() {
@@ -217,6 +169,52 @@ public class MainActivity extends AppCompatActivity {
     }).start();
   }
 
+  public void setListener()
+  {
+    mStart.setOnClickListener(buttonListener);
+    moveLeft.setOnClickListener(buttonListener);
+    moveRight.setOnClickListener(buttonListener);
+    moveUp.setOnClickListener(buttonListener);
+    moveDown.setOnClickListener(buttonListener);
+    moveForward.setOnClickListener(buttonListener);
+    moveBack.setOnClickListener(buttonListener);
+    rotate.setOnClickListener(buttonListener);
+  }
+  public View.OnClickListener buttonListener = new View.OnClickListener() {
+    @Override
+    public void onClick(View v) {
+      switch(v.getId())
+      {
+        case R.id.btn_start:
+          myHandler.sendEmptyMessage(INIT_FINISHED);
+          drawHandler.sendEmptyMessage(INIT_FINISHED);
+          slamStart = true;
+          break;
+        case R.id.btn_left:
+          DsoNdkInterface.move(1);
+          break;
+        case R.id.btn_right:
+          DsoNdkInterface.move(2);
+          break;
+        case R.id.btn_up:
+          DsoNdkInterface.move(3);
+          break;
+        case R.id.btn_down:
+          DsoNdkInterface.move(4);
+          break;
+        case R.id.btn_forward:
+          DsoNdkInterface.move(5);
+          break;
+        case R.id.btn_back:
+          DsoNdkInterface.move(6);
+          break;
+        case R.id.btn_rotate:
+          DsoNdkInterface.move(7);
+          break;
+
+      }
+    }
+  };
 
 
   Handler drawHandler = new Handler() {
@@ -517,5 +515,16 @@ public class MainActivity extends AppCompatActivity {
     // closeCamera();
     stopBackgroundThread();
     super.onPause();
+  }
+
+  @Override
+  protected  void onDestroy(){
+
+    if(slamStart)
+    {
+      closeCamera();
+      DsoNdkInterface.stopSLAM();
+    }
+    super.onDestroy();
   }
 }
