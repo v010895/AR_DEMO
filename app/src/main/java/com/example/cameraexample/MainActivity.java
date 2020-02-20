@@ -123,6 +123,11 @@ public class MainActivity extends AppCompatActivity {
   private int logcounter = 0;
   private float[] currentAcc = new float[3];
   private boolean slamStart = false;
+  boolean getFrame;
+  byte[] Ydata;
+  byte[] Udata;
+  byte[] Vdata;
+  int[] stride;
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -147,7 +152,9 @@ public class MainActivity extends AppCompatActivity {
     recordImageNumber = 0;
     recordImage = false;
     takeImage = false;
+    getFrame = false;
     imageCounter = 0;
+    stride = new int[3];
     mImageReader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 3);
     imageByteArray = new byte[640 * 480];
     currentFrame = new int[640 * 480];
@@ -161,14 +168,27 @@ public class MainActivity extends AppCompatActivity {
       }
     }
     setListener();
-    new Thread(new Runnable() {
-      @Override
-      public void run() {
-        DsoNdkInterface.initSystemWithParameters("/sdcard/calibration/camera.txt");
-      }
-    }).start();
-  }
 
+  }
+  private synchronized void setYUV(byte[] mYdata,byte[] mUdata,byte[] mVdata, int[] strideArray)
+  {
+    Ydata = Arrays.copyOf(mYdata,mYdata.length);
+    Udata = Arrays.copyOf(mUdata,mUdata.length);
+    Vdata = Arrays.copyOf(mVdata,mVdata.length);
+    stride[0] = strideArray[0];
+    stride[1] = strideArray[1];
+    stride[2] = strideArray[2];
+
+  }
+  private synchronized void copyYUV(byte[] mYdata,byte[] mUdata,byte[] mVdata, int[] strideArray)
+  {
+    mYdata = Arrays.copyOf(Ydata, Ydata.length);
+    mUdata = Arrays.copyOf(Udata, Udata.length);
+    mVdata = Arrays.copyOf(Vdata, Vdata.length);
+    strideArray[0] = stride[0];
+    strideArray[1] = stride[1];
+    strideArray[2] = stride[2];
+  }
   public void setListener()
   {
     mStart.setOnClickListener(buttonListener);
@@ -186,6 +206,8 @@ public class MainActivity extends AppCompatActivity {
       switch(v.getId())
       {
         case R.id.btn_start:
+          DsoNdkInterface.initSystemWithParameters("/sdcard/calibration/camera.txt");
+
           myHandler.sendEmptyMessage(INIT_FINISHED);
           drawHandler.sendEmptyMessage(INIT_FINISHED);
           slamStart = true;
@@ -227,30 +249,43 @@ public class MainActivity extends AppCompatActivity {
           public void run() {
             while (true) {
               // TODO Auto-generated method stub
-              int[] drawFrame;
-              synchronized (currentFrame) {
-                drawFrame = Arrays.copyOf(currentFrame, currentFrame.length);
-              }
+              if (getFrame) {
+                int[] drawFrame = new int[640 * 480];
+                byte[] data0;
+                byte[] data1;
+                byte[] data2;
+                int[] strideArray = new int[3];
 
-              int[] resultInt;
-              if (imageCounter > 50) {
-                resultInt = DsoNdkInterface.drawFrame(drawFrame);
-                resultImage = Bitmap.createBitmap(640, 502, Bitmap.Config.RGB_565);
-                resultImage.setPixels(resultInt, 0, 640, 0, 0, 640, 502);
 
-              }
-              runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                  // TODO Auto-generated method stub
-                  imgDealed.setImageBitmap(resultImage);
-                  // Bitmap bmp = BitmapFactory.decodeResource(getResources(),R.id.img_dealed);
+                synchronized (this) {
+                  data0 = Arrays.copyOf(Ydata,Ydata.length);
+                  data1 = Arrays.copyOf(Udata,Udata.length);
+                  data2 = Arrays.copyOf(Vdata,Vdata.length);
+                  strideArray = Arrays.copyOf(stride,stride.length);
                 }
-              });
-              try {
-                Thread.sleep(33);
-              } catch (InterruptedException e) {
+                DsoNdkInterface.YUV420ToARGB(data0, data1, data2, drawFrame, 640,
+                    480, strideArray[0], strideArray[1], strideArray[2], false);
+                int[] resultInt;
+                if (imageCounter > 50) {
+                  resultInt = DsoNdkInterface.drawFrame(drawFrame);
+                  resultImage = Bitmap.createBitmap(640, 502, Bitmap.Config.RGB_565);
+                  resultImage.setPixels(resultInt, 0, 640, 0, 0, 640, 502);
 
+
+                  runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                      // TODO Auto-generated method stub
+                      imgDealed.setImageBitmap(resultImage);
+                      // Bitmap bmp = BitmapFactory.decodeResource(getResources(),R.id.img_dealed);
+                    }
+                  });
+                }
+                try {
+                  Thread.sleep(33);
+                } catch (InterruptedException e) {
+
+                }
               }
             }
           }
@@ -277,6 +312,8 @@ public class MainActivity extends AppCompatActivity {
                 cameraImage = mImageReader.acquireLatestImage();
 
               } while (cameraImage == null);
+
+                //Log.i(TAG, "getImage!!!!");
               if (cameraImage.getFormat() == ImageFormat.YUV_420_888) {
 
                 ByteBuffer bufferY = cameraImage.getPlanes()[0].getBuffer();
@@ -290,9 +327,10 @@ public class MainActivity extends AppCompatActivity {
                 ByteBuffer bufferV = cameraImage.getPlanes()[2].getBuffer();
                 byte[] data2 = new byte[bufferV.remaining()];
                 bufferV.get(data2);
-                final int yRowStride = cameraImage.getPlanes()[0].getRowStride();
-                final int uvRowStride = cameraImage.getPlanes()[1].getRowStride();
-                final int uvPixelStride = cameraImage.getPlanes()[1].getPixelStride();
+                int yRowStride = cameraImage.getPlanes()[0].getRowStride();
+                int uvRowStride = cameraImage.getPlanes()[1].getRowStride();
+                int uvPixelStride = cameraImage.getPlanes()[1].getPixelStride();
+                int[] strideArray = {yRowStride, uvRowStride, uvPixelStride};
 
                 /*
                  * ByteArrayOutputStream outputbytes = new ByteArrayOutputStream();
@@ -313,10 +351,12 @@ public class MainActivity extends AppCompatActivity {
                 int h = cameraImage.getHeight();
                 int[] current_L = new int[w * h];
 
-                DsoNdkInterface.YUV420ToARGB(data0, data1, data2, current_L, cameraImage.getWidth(),
-                    cameraImage.getHeight(), yRowStride, uvRowStride, uvPixelStride, false);
-                synchronized (currentFrame) {
-                  currentFrame = Arrays.copyOf(current_L, current_L.length);
+                synchronized (this) {
+                  Ydata = Arrays.copyOf(data0,data0.length);
+                  Udata = Arrays.copyOf(data1,data1.length);
+                  Vdata = Arrays.copyOf(data2,data2.length);
+                  stride = Arrays.copyOf(strideArray,strideArray.length);
+
                 }
                 float[] calculateAcc = {0.0f, 0.0f, 0.0f};
                 int[] resultInt;
@@ -329,6 +369,7 @@ public class MainActivity extends AppCompatActivity {
               cameraImage.close();
 
               imageCounter++;
+              getFrame = true;
             }
           }
 
