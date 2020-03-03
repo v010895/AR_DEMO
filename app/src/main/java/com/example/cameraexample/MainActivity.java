@@ -84,7 +84,7 @@ public class MainActivity extends AppCompatActivity {
   private ImageReader mImageReader;
   // load dso_slam library
   static {
-    System.loadLibrary("DSO_SLAM");
+    System.loadLibrary("SLAM");
   }
   private String test;
   private String cameraId;
