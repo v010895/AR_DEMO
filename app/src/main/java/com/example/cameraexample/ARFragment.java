@@ -1,11 +1,14 @@
 package com.example.cameraexample;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
+import android.content.DialogInterface;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.v4.app.DialogFragment;
 import android.view.LayoutInflater;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -13,74 +16,32 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.Manifest;
 import android.content.Context;
-import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
-import android.graphics.Matrix;
-import android.graphics.Paint;
-import android.graphics.Rect;
-import android.graphics.RectF;
-import android.graphics.SurfaceTexture;
-import android.graphics.YuvImage;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
-import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
-import android.hardware.camera2.params.StreamConfigurationMap;
-import android.media.Image;
 import android.media.ImageReader;
-import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.os.Looper;
-import android.os.Message;
-import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.util.Range;
-import android.util.Size;
 import android.util.SparseIntArray;
-import android.view.Surface;
-import android.view.TextureView;
-import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
 import android.widget.Button;
-import android.widget.ImageView;
 import android.widget.Toast;
-
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.IntBuffer;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
-import android.util.Log;
 import com.example.cameraexample.nativefunction.DsoNdkInterface;
 import android.support.v4.app.Fragment;
 
-public class ARFragment extends Fragment {
+public class ARFragment extends Fragment implements ActivityCompat.OnRequestPermissionsResultCallback{
   private static final String TAG = "CameraDebug";
   private Button mStart;
   private Button moveLeft;
@@ -90,49 +51,24 @@ public class ARFragment extends Fragment {
   private Button moveForward;
   private Button moveBack;
   private Button rotate;
-  private TextureView textureView;
   private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
-  private int imageNumber;
-  private int recordImageNumber;
   private ImageReader mImageReader;
-  private String test;
   private String cameraId;
   protected CameraDevice cameraDevice;
-  protected CameraCaptureSession cameraCaptureSessions;
-  protected CameraCaptureSession recordCaptureSessions;
-  protected CaptureRequest captureRequest;
+  protected CameraCaptureSession captureSession;
   protected CaptureRequest.Builder captureRequestBuilder;
-  protected CaptureRequest.Builder recordRequestBuilder;
-  private Size imageDimension;
   private SurfaceView imgDealed;
   private ImageReader imageReader;
-  Bitmap currentImage;
   private byte[] imageByteArray;
   private File file;
   private static final int INIT_FINISHED = 1;
   private static final int REQUEST_CAMERA_PERMISSION = 200;
-  private boolean mFlashSupported;
   private Handler mBackgroundHandler;
   private HandlerThread mBackgroundThread;
-  private Size mPreviewSize;
-  private Image cameraImage;
-  private boolean recordImage;
   private File folder;
-  private boolean takeImage;
-  private int imageCounter = 0;
-  private Bitmap currentBitmap;
-  private Bitmap resultImage;
   private float mMaximalFocalLength;
   private int[] currentFrame;
   private Context mContext;
-  private SensorManager mSensorManager;
-  private Looper mSensorLooper;
-  private SensorEventListener mSensorEventListener;
-  private Sensor mAccSensor, mGyrSensor;
-  private float[] mTmpGyroEvent = new float[3];
-  private float[] mTmpAccEvent = new float[3];
-  private int logcounter = 0;
-  private float[] currentAcc = new float[3];
   private boolean slamStart = false;
   boolean getFrame;
   private Canvas testCanvas;
@@ -141,6 +77,9 @@ public class ARFragment extends Fragment {
   byte[] Udata;
   byte[] Vdata;
   int[] stride;
+  private static final String FRAGMENT_DIALOG = "dialog";
+  DrawFrameThread mDrawFrameThread;
+  CameraThread mCameraThread;
   @Nullable
   @Override
   public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -154,11 +93,13 @@ public class ARFragment extends Fragment {
   public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
     super.onViewCreated(view, savedInstanceState);
     mContext = this.getActivity();
-    mSensorManager = (SensorManager) mContext.getSystemService(Context.SENSOR_SERVICE);
+
+    mImageReader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2);
     imgDealed = (SurfaceView) view.findViewById(R.id.texture);
     mSurfaceHolder = imgDealed.getHolder();
     mSurfaceHolder.addCallback(frameCallback);
-    assert textureView != null;
+    mDrawFrameThread = new DrawFrameThread(mSurfaceHolder);
+    mCameraThread = new CameraThread(mImageReader, mDrawFrameThread);
     mStart = (Button) view.findViewById(R.id.btn_start);
     moveLeft = (Button) view.findViewById(R.id.btn_left);
     moveRight = (Button) view.findViewById(R.id.btn_right);
@@ -167,14 +108,9 @@ public class ARFragment extends Fragment {
     moveForward = (Button) view.findViewById(R.id.btn_forward);
     moveBack = (Button) view.findViewById(R.id.btn_back);
     rotate = (Button) view.findViewById(R.id.btn_rotate);
-    imageNumber = 0;
-    recordImageNumber = 0;
-    recordImage = false;
-    takeImage = false;
     getFrame = false;
-    imageCounter = 0;
     stride = new int[3];
-    mImageReader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2);
+    requestCameraPermission();
     imageByteArray = new byte[640 * 480];
     currentFrame = new int[640 * 480];
     Arrays.fill(currentFrame, 0);
@@ -187,6 +123,41 @@ public class ARFragment extends Fragment {
       }
     }
     setListener();
+  }
+  private void requestCameraPermission() {
+    if (ActivityCompat.shouldShowRequestPermissionRationale((Activity)mContext,Manifest.permission.CAMERA)) {
+      new ConfirmationDialog().show(getChildFragmentManager(), FRAGMENT_DIALOG);
+    } else {
+      requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA_PERMISSION);
+    }
+  }
+  public static class ConfirmationDialog extends DialogFragment {
+
+    @NonNull
+    @Override
+    public Dialog onCreateDialog(Bundle savedInstanceState) {
+      final Fragment parent = getParentFragment();
+      return new AlertDialog.Builder(getActivity())
+          .setMessage(R.string.request_permission)
+          .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+              parent.requestPermissions(new String[]{Manifest.permission.CAMERA},
+                  REQUEST_CAMERA_PERMISSION);
+            }
+          })
+          .setNegativeButton(android.R.string.cancel,
+              new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                  Activity activity = parent.getActivity();
+                  if (activity != null) {
+                    activity.finish();
+                  }
+                }
+              })
+          .create();
+    }
   }
   public void setListener()
   {
@@ -206,9 +177,9 @@ public class ARFragment extends Fragment {
       {
         case R.id.btn_start:
           DsoNdkInterface.initSystemWithParameters("/sdcard/calibration/camera.txt");
-
-          myHandler.sendEmptyMessage(INIT_FINISHED);
+          //myHandler.sendEmptyMessage(INIT_FINISHED);
           //drawHandler.sendEmptyMessage(INIT_FINISHED);
+          mCameraThread.start();
           slamStart = true;
           break;
         case R.id.btn_left:
@@ -236,65 +207,12 @@ public class ARFragment extends Fragment {
       }
     }
   };
-  private Runnable tempRunable = new Runnable() {
-    @Override
-    public void run() {
-        while (true) {
-          try {
-            drawView();
-            Thread.sleep(33);
-          } catch (InterruptedException e) {
-            e.printStackTrace();
-          }
-        }
-      }
-  };
-
-  public void drawView(){
-    try {
-      if (null != mSurfaceHolder) {
-        testCanvas = mSurfaceHolder.lockCanvas();
-        if (getFrame) {
-          int[] drawFrame = new int[640 * 480];
-          byte[] data0;
-          byte[] data1;
-          byte[] data2;
-          int[] strideArray = new int[3];
 
 
-          synchronized (this) {
-            data0 = Arrays.copyOf(Ydata, Ydata.length);
-            data1 = Arrays.copyOf(Udata, Udata.length);
-            data2 = Arrays.copyOf(Vdata, Vdata.length);
-            strideArray = Arrays.copyOf(stride, stride.length);
-          }
-          DsoNdkInterface.YUV420ToARGB(data0, data1, data2, drawFrame, 640,
-              480, strideArray[0], strideArray[1], strideArray[2], false);
-          int[] resultInt;
-          if (imageCounter > 50) {
-            resultInt = DsoNdkInterface.drawFrame(drawFrame);
-            resultImage = Bitmap.createBitmap(640, 502, Bitmap.Config.RGB_565);
-            resultImage.setPixels(resultInt, 0, 640, 0, 0, 640, 502);
-            //Rect srcRect = new Rect(0,0,,testCanvas.getHeight());
-            Rect dstRect = new Rect(0,0,testCanvas.getWidth(),testCanvas.getHeight());
-            testCanvas.drawBitmap(resultImage,null,dstRect,null);
-          }
-
-        }
-
-      }
-    } catch (Exception e) {
-
-    } finally {
-      if (null != testCanvas) {
-        mSurfaceHolder.unlockCanvasAndPost(testCanvas);
-      }
-    }
-  }
   private SurfaceHolder.Callback frameCallback = new SurfaceHolder.Callback() {
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-          new Thread(tempRunable).start();
+          mDrawFrameThread.start();
     }
 
     @Override
@@ -308,154 +226,14 @@ public class ARFragment extends Fragment {
 
     }
   };
-  Handler drawHandler = new Handler() {
-    public void handleMessage(Message msg) {
-      switch (msg.what) {
-        case INIT_FINISHED:
-          new Thread(new Runnable() {
 
-            @Override
-            public void run() {
-              while (true) {
-                // TODO Auto-generated method stub
-                if (getFrame) {
-                  int[] drawFrame = new int[640 * 480];
-                  byte[] data0;
-                  byte[] data1;
-                  byte[] data2;
-                  int[] strideArray = new int[3];
-
-
-                  synchronized (this) {
-                    data0 = Arrays.copyOf(Ydata,Ydata.length);
-                    data1 = Arrays.copyOf(Udata,Udata.length);
-                    data2 = Arrays.copyOf(Vdata,Vdata.length);
-                    strideArray = Arrays.copyOf(stride,stride.length);
-                  }
-                  DsoNdkInterface.YUV420ToARGB(data0, data1, data2, drawFrame, 640,
-                      480, strideArray[0], strideArray[1], strideArray[2], false);
-                  int[] resultInt;
-                  if (imageCounter > 50) {
-                    resultInt = DsoNdkInterface.drawFrame(drawFrame);
-                    resultImage = Bitmap.createBitmap(640, 502, Bitmap.Config.RGB_565);
-                    resultImage.setPixels(resultInt, 0, 640, 0, 0, 640, 502);
-
-
-                    getActivity().runOnUiThread(new Runnable() {
-                      @Override
-                      public void run() {
-                        // TODO Auto-generated method stub
-                        //imgDealed.setImageBitmap(resultImage);
-                        // Bitmap bmp = BitmapFactory.decodeResource(getResources(),R.id.img_dealed);
-                      }
-                    });
-                  }
-                  try {
-                    Thread.sleep(33);
-                  } catch (InterruptedException e) {
-
-                  }
-                }
-              }
-            }
-          }).start();
-
-          break;
-      }
-      super.handleMessage(msg);
-    }
-
-  };
-  Handler myHandler = new Handler() {
-    public void handleMessage(Message msg) {
-      switch (msg.what) {
-        case INIT_FINISHED:
-          Toast.makeText(getActivity().getApplicationContext(), "init has been finished!", Toast.LENGTH_LONG).show();
-          new Thread(new Runnable() {
-
-            @Override
-            public void run() {
-              while (true) {
-
-                do {
-                  cameraImage = mImageReader.acquireLatestImage();
-
-
-                } while (cameraImage == null);
-                Long timestamp = cameraImage.getTimestamp();
-                //Log.i(TAG, String.format("Image timestamp %d",timestamp));
-                if (cameraImage.getFormat() == ImageFormat.YUV_420_888) {
-
-                  ByteBuffer bufferY = cameraImage.getPlanes()[0].getBuffer();
-                  byte[] data0 = new byte[bufferY.remaining()];
-                  bufferY.get(data0);
-
-                  ByteBuffer bufferU = cameraImage.getPlanes()[1].getBuffer();
-                  byte[] data1 = new byte[bufferU.remaining()];
-                  bufferU.get(data1);
-
-                  ByteBuffer bufferV = cameraImage.getPlanes()[2].getBuffer();
-                  byte[] data2 = new byte[bufferV.remaining()];
-                  bufferV.get(data2);
-                  int yRowStride = cameraImage.getPlanes()[0].getRowStride();
-                  int uvRowStride = cameraImage.getPlanes()[1].getRowStride();
-                  int uvPixelStride = cameraImage.getPlanes()[1].getPixelStride();
-                  int[] strideArray = {yRowStride, uvRowStride, uvPixelStride};
-
-                  /*
-                   * ByteArrayOutputStream outputbytes = new ByteArrayOutputStream();
-                   *
-                   *
-                   *
-                   * try { outputbytes.write(data0); outputbytes.write(data2);
-                   * outputbytes.write(data1); } catch (IOException e) { e.printStackTrace(); }
-                   * final YuvImage yuvImage = new YuvImage(outputbytes.toByteArray(),
-                   * ImageFormat.NV21, cameraImage.getWidth(),cameraImage.getHeight(), null);
-                   * ByteArrayOutputStream outBitmap = new ByteArrayOutputStream();
-                   *
-                   * yuvImage.compressToJpeg(new Rect(0, 0, cameraImage.getWidth(),
-                   * cameraImage.getHeight()), 95, outBitmap); currentBitmap =
-                   * BitmapFactory.decodeByteArray(outBitmap.toByteArray(), 0, outBitmap.size());
-                   */
-                  int w = cameraImage.getWidth();
-                  int h = cameraImage.getHeight();
-                  int[] current_L = new int[w * h];
-
-                  synchronized (this) {
-                    Ydata = Arrays.copyOf(data0,data0.length);
-                    Udata = Arrays.copyOf(data1,data1.length);
-                    Vdata = Arrays.copyOf(data2,data2.length);
-                    stride = Arrays.copyOf(strideArray,strideArray.length);
-
-                  }
-                  float[] calculateAcc = {0.0f, 0.0f, 0.0f};
-                  int[] resultInt;
-                  if (imageCounter > 50) {
-                    resultInt = DsoNdkInterface.runDsoSlam(data0, current_L, 640, 480, calculateAcc);
-
-                  }
-
-                }
-                cameraImage.close();
-
-                imageCounter++;
-                getFrame = true;
-              }
-            }
-
-          }).start();
-          break;
-      }
-      super.handleMessage(msg);
-    }
-  };
   private final CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
     @Override
     public void onOpened(CameraDevice camera) {
       // This is called when the camera is open
       Log.e(TAG, "onOpened");
       cameraDevice = camera;
-      createRecord();
+      createCapture();
     }
 
     @Override
@@ -486,7 +264,7 @@ public class ARFragment extends Fragment {
       e.printStackTrace();
     }
   }
-  protected void createRecord() {
+  protected void createCapture() {
     if (null == cameraDevice) {
       Log.e(TAG, "cameraDevice is null");
       return;
@@ -494,18 +272,18 @@ public class ARFragment extends Fragment {
 
     try {
 
-      recordRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+      captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
 
-      recordRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
-      recordRequestBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, 0f);
-      recordRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON);
-      recordRequestBuilder.set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON);
-      recordRequestBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,new Range<Integer>(60,65));
+      captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
+      captureRequestBuilder.set(CaptureRequest.LENS_FOCUS_DISTANCE, 0f);
+      captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON);
+      captureRequestBuilder.set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON);
+      captureRequestBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,new Range<Integer>(60,65));
 
       if (mMaximalFocalLength > 0) {
-        recordRequestBuilder.set(CaptureRequest.LENS_FOCAL_LENGTH, mMaximalFocalLength);
+        captureRequestBuilder.set(CaptureRequest.LENS_FOCAL_LENGTH, mMaximalFocalLength);
       }
-      recordRequestBuilder.addTarget(mImageReader.getSurface());
+      captureRequestBuilder.addTarget(mImageReader.getSurface());
       cameraDevice.createCaptureSession(Arrays.asList(mImageReader.getSurface()),
           new CameraCaptureSession.StateCallback() {
             @Override
@@ -515,8 +293,8 @@ public class ARFragment extends Fragment {
                 return;
               }
               // When the session is ready, we start displaying the preview.
-              recordCaptureSessions = cameraCaptureSession;
-              updateRecord();
+              captureSession = cameraCaptureSession;
+              updateCapture();
             }
 
             @Override
@@ -570,18 +348,58 @@ public class ARFragment extends Fragment {
       Log.i("TAG",String.format("Exposure Time %d",expTime));
       super.onCaptureCompleted(session, request, result);
       try {
-        session.capture(recordRequestBuilder.build(), captureListener, mBackgroundHandler);
+        session.capture(captureRequestBuilder.build(), captureListener, mBackgroundHandler);
       } catch (CameraAccessException e) {
         e.printStackTrace();
       }
     }
   };
-  protected void updateRecord() {
+  @Override
+  public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                         @NonNull int[] grantResults) {
+    if (requestCode == REQUEST_CAMERA_PERMISSION) {
+      if (grantResults.length != 1 || grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+        ErrorDialog.newInstance(getString(R.string.request_permission))
+            .show(getChildFragmentManager(), FRAGMENT_DIALOG);
+      }
+    } else {
+      super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    }
+  }
+  public static class ErrorDialog extends DialogFragment {
+
+    private static final String ARG_MESSAGE = "message";
+
+    public static ErrorDialog newInstance(String message) {
+      ErrorDialog dialog = new ErrorDialog();
+      Bundle args = new Bundle();
+      args.putString(ARG_MESSAGE, message);
+      dialog.setArguments(args);
+      return dialog;
+    }
+
+    @NonNull
+    @Override
+    public Dialog onCreateDialog(Bundle savedInstanceState) {
+      final Activity activity = getActivity();
+      return new AlertDialog.Builder(activity)
+          .setMessage(getArguments().getString(ARG_MESSAGE))
+          .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialogInterface, int i) {
+              activity.finish();
+            }
+          })
+          .create();
+    }
+
+  }
+  protected void updateCapture() {
     if (null == cameraDevice) {
       Log.e(TAG, "updatePreview error, return");
     }
     try {
-      recordCaptureSessions.setRepeatingRequest(recordRequestBuilder.build(), captureListener, mBackgroundHandler);
+      captureSession.setRepeatingRequest(captureRequestBuilder.build(), captureListener, mBackgroundHandler);
     } catch (CameraAccessException e) {
       e.printStackTrace();
     }
@@ -600,6 +418,7 @@ public class ARFragment extends Fragment {
   public void onResume() {
 
     Log.e(TAG, "onResume");
+
     startBackgroundThread();
     openCamera(640, 480);
     super.onResume();
@@ -607,7 +426,7 @@ public class ARFragment extends Fragment {
   @Override
   public void onPause() {
     Log.e(TAG, "onPause");
-    // closeCamera();
+     closeCamera();
     stopBackgroundThread();
     super.onPause();
   }
