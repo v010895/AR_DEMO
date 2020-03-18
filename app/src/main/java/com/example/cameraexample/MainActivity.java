@@ -34,6 +34,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
+import android.support.v4.app.Fragment;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.util.Range;
@@ -69,8 +70,8 @@ import android.hardware.SensorManager;
 import android.util.Log;
 import com.example.cameraexample.nativefunction.DsoNdkInterface;
 
-public class MainActivity extends Activity {
-
+public class MainActivity extends AppCompatActivity {
+  ARFragment mARFragment;
   // load dso_slam library
   static {
     System.loadLibrary("DSO_SLAM");
@@ -82,11 +83,11 @@ public class MainActivity extends Activity {
     requestWindowFeature(Window.FEATURE_NO_TITLE);
     getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);// 设置全屏
     setContentView(R.layout.activity_main);
-
+    mARFragment = new ARFragment();
     this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     if (null == savedInstanceState) {
-      getFragmentManager().beginTransaction()
-          .replace(R.id.container, ARFragment.newInstance())
+      getSupportFragmentManager().beginTransaction()
+          .replace(R.id.container, mARFragment)
           .commit();
     }
 

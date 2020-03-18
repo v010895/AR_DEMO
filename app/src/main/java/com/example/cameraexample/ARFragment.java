@@ -1,10 +1,14 @@
 package com.example.cameraexample;
 
 import android.app.Activity;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.view.LayoutInflater;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.Manifest;
@@ -74,7 +78,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.util.Log;
 import com.example.cameraexample.nativefunction.DsoNdkInterface;
-import android.app.Fragment;
+import android.support.v4.app.Fragment;
 
 public class ARFragment extends Fragment {
   private static final String TAG = "CameraDebug";
@@ -100,7 +104,7 @@ public class ARFragment extends Fragment {
   protected CaptureRequest.Builder captureRequestBuilder;
   protected CaptureRequest.Builder recordRequestBuilder;
   private Size imageDimension;
-  ImageView imgDealed;
+  private SurfaceView imgDealed;
   private ImageReader imageReader;
   Bitmap currentImage;
   private byte[] imageByteArray;
@@ -131,6 +135,8 @@ public class ARFragment extends Fragment {
   private float[] currentAcc = new float[3];
   private boolean slamStart = false;
   boolean getFrame;
+  private Canvas testCanvas;
+  private SurfaceHolder mSurfaceHolder;
   byte[] Ydata;
   byte[] Udata;
   byte[] Vdata;
@@ -149,7 +155,9 @@ public class ARFragment extends Fragment {
     super.onViewCreated(view, savedInstanceState);
     mContext = this.getActivity();
     mSensorManager = (SensorManager) mContext.getSystemService(Context.SENSOR_SERVICE);
-    imgDealed = (ImageView) view.findViewById(R.id.texture);
+    imgDealed = (SurfaceView) view.findViewById(R.id.texture);
+    mSurfaceHolder = imgDealed.getHolder();
+    mSurfaceHolder.addCallback(frameCallback);
     assert textureView != null;
     mStart = (Button) view.findViewById(R.id.btn_start);
     moveLeft = (Button) view.findViewById(R.id.btn_left);
@@ -200,7 +208,7 @@ public class ARFragment extends Fragment {
           DsoNdkInterface.initSystemWithParameters("/sdcard/calibration/camera.txt");
 
           myHandler.sendEmptyMessage(INIT_FINISHED);
-          drawHandler.sendEmptyMessage(INIT_FINISHED);
+          //drawHandler.sendEmptyMessage(INIT_FINISHED);
           slamStart = true;
           break;
         case R.id.btn_left:
@@ -226,6 +234,78 @@ public class ARFragment extends Fragment {
           break;
 
       }
+    }
+  };
+  private Runnable tempRunable = new Runnable() {
+    @Override
+    public void run() {
+        while (true) {
+          try {
+            drawView();
+            Thread.sleep(33);
+          } catch (InterruptedException e) {
+            e.printStackTrace();
+          }
+        }
+      }
+  };
+
+  public void drawView(){
+    try {
+      if (null != mSurfaceHolder) {
+        testCanvas = mSurfaceHolder.lockCanvas();
+        if (getFrame) {
+          int[] drawFrame = new int[640 * 480];
+          byte[] data0;
+          byte[] data1;
+          byte[] data2;
+          int[] strideArray = new int[3];
+
+
+          synchronized (this) {
+            data0 = Arrays.copyOf(Ydata, Ydata.length);
+            data1 = Arrays.copyOf(Udata, Udata.length);
+            data2 = Arrays.copyOf(Vdata, Vdata.length);
+            strideArray = Arrays.copyOf(stride, stride.length);
+          }
+          DsoNdkInterface.YUV420ToARGB(data0, data1, data2, drawFrame, 640,
+              480, strideArray[0], strideArray[1], strideArray[2], false);
+          int[] resultInt;
+          if (imageCounter > 50) {
+            resultInt = DsoNdkInterface.drawFrame(drawFrame);
+            resultImage = Bitmap.createBitmap(640, 502, Bitmap.Config.RGB_565);
+            resultImage.setPixels(resultInt, 0, 640, 0, 0, 640, 502);
+            //Rect srcRect = new Rect(0,0,,testCanvas.getHeight());
+            Rect dstRect = new Rect(0,0,testCanvas.getWidth(),testCanvas.getHeight());
+            testCanvas.drawBitmap(resultImage,null,dstRect,null);
+          }
+
+        }
+
+      }
+    } catch (Exception e) {
+
+    } finally {
+      if (null != testCanvas) {
+        mSurfaceHolder.unlockCanvasAndPost(testCanvas);
+      }
+    }
+  }
+  private SurfaceHolder.Callback frameCallback = new SurfaceHolder.Callback() {
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+          new Thread(tempRunable).start();
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+
+
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+
     }
   };
   Handler drawHandler = new Handler() {
@@ -265,7 +345,7 @@ public class ARFragment extends Fragment {
                       @Override
                       public void run() {
                         // TODO Auto-generated method stub
-                        imgDealed.setImageBitmap(resultImage);
+                        //imgDealed.setImageBitmap(resultImage);
                         // Bitmap bmp = BitmapFactory.decodeResource(getResources(),R.id.img_dealed);
                       }
                     });
