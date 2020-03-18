@@ -10,17 +10,26 @@
         android:orientation="vertical"
         android:baselineAligned="false" >
         <LinearLayout
+            android:id="@+id/argragment"
             android:layout_weight="4"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="horizontal"
             android:layout_gravity="center"
             android:baselineAligned="false" >
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+            <android.opengl.GLSurfaceView
+                android:id="@+id/myGLSurfcae"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"/>
             <SurfaceView
                 android:id="@+id/texture"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 />
+            </FrameLayout>
         </LinearLayout>
         <LinearLayout
             android:layout_weight="1"

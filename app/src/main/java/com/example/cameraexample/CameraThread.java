@@ -34,13 +34,13 @@ public class CameraThread extends Thread{
   private DrawFrameThread mDrawFrameThread;
   private byte[] Ydata , Udata, Vdata;
   private int[] stride;
-
+  private int imageCounter; //FIXME:
   public CameraThread(ImageReader _reader, DrawFrameThread _drawFrameThread)
   {
     mImageReader = _reader;
     mDrawFrameThread = _drawFrameThread;
     getFrame =false;
-
+    imageCounter=0;
   }
 
   @Override
@@ -84,13 +84,16 @@ public class CameraThread extends Thread{
 
         float[] calculateAcc = {0.0f, 0.0f, 0.0f};
         int[] resultInt;
+        if(imageCounter > 50)
         {
           resultInt = DsoNdkInterface.runDsoSlam(data0, current_L, 640, 480, calculateAcc);
+          mDrawFrameThread.setGetFrame(getFrame);
         }
 
       }
+      imageCounter++;
       cameraImage.close();
-      mDrawFrameThread.setGetFrame(getFrame);
+
     }
   }
 }

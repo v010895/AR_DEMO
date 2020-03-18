@@ -5,10 +5,15 @@ import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.DialogInterface;
 import android.graphics.Canvas;
+import android.graphics.PixelFormat;
+import android.graphics.Rect;
+import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.DialogFragment;
+import android.support.v4.app.FragmentActivity;
+import android.support.v7.app.AppCompatActivity;
 import android.view.LayoutInflater;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -34,7 +39,9 @@ import android.support.v4.app.ActivityCompat;
 import android.util.Log;
 import android.util.Range;
 import android.util.SparseIntArray;
+import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.Toast;
 import java.io.File;
 import java.util.Arrays;
@@ -80,6 +87,7 @@ public class ARFragment extends Fragment implements ActivityCompat.OnRequestPerm
   private static final String FRAGMENT_DIALOG = "dialog";
   DrawFrameThread mDrawFrameThread;
   CameraThread mCameraThread;
+  private GLRenderer myGLRenderer;
   @Nullable
   @Override
   public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -96,6 +104,7 @@ public class ARFragment extends Fragment implements ActivityCompat.OnRequestPerm
 
     mImageReader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2);
     imgDealed = (SurfaceView) view.findViewById(R.id.texture);
+
     mSurfaceHolder = imgDealed.getHolder();
     mSurfaceHolder.addCallback(frameCallback);
     mDrawFrameThread = new DrawFrameThread(mSurfaceHolder);
@@ -123,6 +132,24 @@ public class ARFragment extends Fragment implements ActivityCompat.OnRequestPerm
       }
     }
     setListener();
+    GLSurfaceView myGLView = (GLSurfaceView) view.findViewById(R.id.myGLSurfcae);
+    myGLView.setEGLConfigChooser(8, 8, 8, 8, 16, 0);
+    myGLView.getHolder().setFormat(PixelFormat.TRANSLUCENT);
+    myGLRenderer = new GLRenderer();
+    Rect tempRect = mSurfaceHolder.getSurfaceFrame();
+    //myGLRenderer.setVidDim(tempRect.width(),tempRect.height());
+    myGLView.setRenderer(myGLRenderer);
+
+
+    //getActivity().addContentView(myGLView, new WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT,
+    //    WindowManager.LayoutParams.WRAP_CONTENT));
+    myGLView.setZOrderMediaOverlay(true);
+
+
+    //myHandler.sendEmptyMessage(INIT_FINISHED);
+    //drawHandler.sendEmptyMessage(INIT_FINISHED);
+
+
   }
   private void requestCameraPermission() {
     if (ActivityCompat.shouldShowRequestPermissionRationale((Activity)mContext,Manifest.permission.CAMERA)) {
@@ -177,8 +204,6 @@ public class ARFragment extends Fragment implements ActivityCompat.OnRequestPerm
       {
         case R.id.btn_start:
           DsoNdkInterface.initSystemWithParameters("/sdcard/calibration/camera.txt");
-          //myHandler.sendEmptyMessage(INIT_FINISHED);
-          //drawHandler.sendEmptyMessage(INIT_FINISHED);
           mCameraThread.start();
           slamStart = true;
           break;
@@ -213,6 +238,7 @@ public class ARFragment extends Fragment implements ActivityCompat.OnRequestPerm
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
           mDrawFrameThread.start();
+          //myGLRenderer.setRenderCube(true);
     }
 
     @Override
